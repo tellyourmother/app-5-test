@@ -1,6 +1,6 @@
-# Streamlit NBA Player Stats Web App
+# Streamlit NBA Player Stats & Prediction Web App
 # First, install dependencies:
-# pip install nba_api pandas plotly streamlit
+# pip install nba_api pandas plotly streamlit numpy
 
 import streamlit as st
 from nba_api.stats.static import players
@@ -8,6 +8,7 @@ from nba_api.stats.endpoints import playergamelog
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import numpy as np
 
 
 def get_player_id(player_name):
@@ -30,6 +31,22 @@ def fetch_games(player_id, season, location=None, games=20):
     return df
 
 
+def monte_carlo_prediction(data):
+    simulations = np.random.choice(data, size=1000, replace=True)
+    return np.mean(simulations)
+
+
+def poisson_prediction(data):
+    avg = np.mean(data)
+    return np.random.poisson(avg)
+
+
+def linest_prediction(data):
+    x = np.arange(len(data))
+    coef = np.polyfit(x, data, 1)
+    return np.polyval(coef, len(data))
+
+
 def create_interactive_graph(player_name, season, location, games=20):
     player_id = get_player_id(player_name)
     if not player_id:
@@ -49,14 +66,14 @@ def create_interactive_graph(player_name, season, location, games=20):
         colors = ['green' if val > averages[stat] else 'gray' for val in df[stat]]
 
         bar = go.Bar(
-            x=df['GAME_DATE'],
+            x=df['GAME_DATE'] + ' (' + df['MATCHUP'] + ')',
             y=df[stat],
             marker_color=colors,
             name=stat
         )
 
         line = go.Scatter(
-            x=df['GAME_DATE'],
+            x=df['GAME_DATE'] + ' (' + df['MATCHUP'] + ')',
             y=[averages[stat]]*len(df),
             mode='lines',
             line=dict(color='red', dash='dash'),
@@ -75,14 +92,26 @@ def create_interactive_graph(player_name, season, location, games=20):
 
     st.plotly_chart(fig)
 
+    st.subheader("Next Game Predictions")
+    selected_stat = st.selectbox("Select a stat to predict:", stats)
+    stat_data = df[selected_stat].values
+
+    pred_linest = linest_prediction(stat_data)
+    pred_monte = monte_carlo_prediction(stat_data)
+    pred_poisson = poisson_prediction(stat_data)
+
+    st.write(f"**Linear Regression Prediction:** {pred_linest:.2f}")
+    st.write(f"**Monte Carlo Prediction:** {pred_monte:.2f}")
+    st.write(f"**Poisson Prediction:** {pred_poisson}")
+
 
 # Streamlit UI
-st.title("NBA Player Recent Game Stats")
+st.title("NBA Player Recent Game Stats & Predictions")
 
 player_name = st.text_input("Enter NBA player name:", "LeBron James")
-season = st.text_input("Enter season (e.g., '2024-25'):", "2024-25")
+season = st.text_input("Enter season (e.g., '2023-24'):", "2023-24")
 location = st.selectbox("Select game location:", ['Overall', 'Home', 'Away'])
 games = st.slider("Select number of recent games:", 5, 30, 20)
 
-if st.button("Show Stats"):
+if st.button("Show Stats & Predictions"):
     create_interactive_graph(player_name, season, location, games)
