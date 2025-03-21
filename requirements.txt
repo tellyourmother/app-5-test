@@ -2,4 +2,5 @@ streamlit
 nba_api
 pandas
 plotly
-numpy
+xgboost
+scikit-learn
