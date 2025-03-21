@@ -1,6 +1,6 @@
-# Streamlit NBA Player Stats & Prediction Web App
+# Streamlit NBA Player Stats & XGBoost Predictions Web App
 # First, install dependencies:
-# pip install nba_api pandas plotly streamlit numpy
+# pip install nba_api pandas plotly streamlit xgboost scikit-learn
 
 import streamlit as st
 from nba_api.stats.static import players
@@ -8,7 +8,8 @@ from nba_api.stats.endpoints import playergamelog
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import numpy as np
+from xgboost import XGBRegressor
+from sklearn.model_selection import train_test_split
 
 
 def get_player_id(player_name):
@@ -19,7 +20,7 @@ def get_player_id(player_name):
     return None
 
 
-def fetch_games(player_id, season, location=None, games=20):
+def fetch_games(player_id, season, location=None, games=30):
     gamelog = playergamelog.PlayerGameLog(player_id=player_id, season=season)
     df = gamelog.get_data_frames()[0]
     if location == 'Home':
@@ -31,20 +32,22 @@ def fetch_games(player_id, season, location=None, games=20):
     return df
 
 
-def monte_carlo_prediction(data):
-    simulations = np.random.choice(data, size=1000, replace=True)
-    return np.mean(simulations)
+def train_xgboost_predict(df, target_stat):
+    features = ['MIN', 'FGA', 'FG3A', 'FTA', 'OREB', 'DREB', 'AST', 'STL', 'BLK', 'TO', 'PF']
+    df = df.dropna(subset=features + [target_stat])
 
+    X = df[features]
+    y = df[target_stat]
 
-def poisson_prediction(data):
-    avg = np.mean(data)
-    return np.random.poisson(avg)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
+    model = XGBRegressor()
+    model.fit(X_train, y_train)
 
-def linest_prediction(data):
-    x = np.arange(len(data))
-    coef = np.polyfit(x, data, 1)
-    return np.polyval(coef, len(data))
+    latest_game_features = df[features].iloc[-1:].values
+    prediction = model.predict(latest_game_features)[0]
+
+    return prediction
 
 
 def create_interactive_graph(player_name, season, location, games=20):
@@ -92,21 +95,18 @@ def create_interactive_graph(player_name, season, location, games=20):
 
     st.plotly_chart(fig)
 
-    st.subheader("Next Game Predictions")
-    selected_stat = st.selectbox("Select a stat to predict:", stats)
-    stat_data = df[selected_stat].values
+    st.subheader("XGBoost Predictions for Next Game")
+    predictions = {}
+    cols = st.columns(len(stats))
 
-    pred_linest = linest_prediction(stat_data)
-    pred_monte = monte_carlo_prediction(stat_data)
-    pred_poisson = poisson_prediction(stat_data)
-
-    st.write(f"**Linear Regression Prediction:** {pred_linest:.2f}")
-    st.write(f"**Monte Carlo Prediction:** {pred_monte:.2f}")
-    st.write(f"**Poisson Prediction:** {pred_poisson}")
+    for idx, stat in enumerate(stats):
+        pred = train_xgboost_predict(df, stat)
+        predictions[stat] = pred
+        cols[idx].metric(label=stat, value=f"{pred:.2f}")
 
 
 # Streamlit UI
-st.title("NBA Player Recent Game Stats & Predictions")
+st.title("NBA Player Recent Game Stats & XGBoost Predictions")
 
 player_name = st.text_input("Enter NBA player name:", "LeBron James")
 season = st.text_input("Enter season (e.g., '2023-24'):", "2023-24")
